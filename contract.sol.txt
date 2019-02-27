@@ -1,0 +1,294 @@
+pragma solidity ^0.4.0;
+contract ERC20  
+{
+  function allowance(address owner, address spender) public view returns (uint);
+  function transferFrom(address from, address to, uint value) public returns (bool);
+  function approve(address spender, uint value) public returns (bool);
+  event Approval(address indexed owner, address indexed spender, uint value);
+  function totalSupply() public view returns (uint);
+  function balanceOf(address who) public view returns (uint);
+  function transfer(address to, uint value) public returns (bool);
+  event Transfer(address indexed from, address indexed to, uint value);
+}
+
+contract Bank 
+{
+
+    //Register contract Details
+    struct Bank_Details
+    {
+        bytes name;
+        uint bal;
+        bool status;
+        uint loan_interst;
+        uint fixed_deposit_interst;
+        uint token_count;
+        uint borrow_amount;
+        uint lend_amount;
+        uint fixed_amount_bank;
+        uint fixed_amount_user;
+    }
+    
+    mapping(address => Bank_Details) public bank;
+    mapping(uint => address) public bank_users;
+    uint public bank_count;
+    mapping(address=>mapping(address=>uint)) public allowed;
+
+
+    //Loan_Details contract Details
+    
+    uint public loan_count = 0;
+    uint public eth= 0.01 ether;
+
+    struct loan_details
+    {
+        uint loan_id;
+        address lender_address;
+        address borrower_address;
+        address token_address;
+        uint amount;
+        uint settle_count;
+        uint next_settle_time;
+        uint months;
+        uint bal_loan;
+        uint current_installment;
+    }
+    
+    mapping(uint => loan_details) public loan;
+    //mapping(address=>loan_details) public check_bank;
+    mapping(address => mapping(uint => uint)) public loan_get_id;
+    mapping(address => uint) public loan_get_count;
+    
+    mapping(address => mapping(uint => uint)) public loan_pro_id;
+    mapping(address => uint) public loan_pro_count;
+
+
+    //Fixed_Deposit contract Details
+    struct fixed_dep_details
+    {
+        uint fixed_dep_id;
+        address bank_address;
+        address user_address;
+        uint amount;
+        uint end_time;
+        uint year;
+        bool status;
+    }
+
+    mapping(uint => fixed_dep_details) public fix_dep;
+    uint public fix_dep_count;
+
+    //Bank can stores the users details
+    mapping(address => mapping(uint => uint)) public my_clients_dep_id;
+    mapping(address => uint) public my_clients_count;
+
+    //User can stores the deposited bank details
+    mapping(address => mapping(uint => uint)) public my_fix_dep_id;
+    mapping(address => uint) public my_fix_acc_count;
+    
+    
+    // uint public amount;
+    uint public temp_amount;
+    uint public temp_int_amt;
+
+
+   
+    function register(bytes name, uint loan_interst, uint fixed_deposit) public payable
+    {
+        require(bank[msg.sender].status == false);
+        if(bank[msg.sender].name.length == 0)
+        {
+            bank_users[bank_count] = msg.sender;
+            bank_count += 1;
+        }
+
+        bank[msg.sender].name = name; // name;                        // After Change
+        bank[msg.sender].loan_interst = loan_interst;
+        bank[msg.sender].fixed_deposit_interst = fixed_deposit;
+        bank[msg.sender].status = true;
+        
+    }
+
+    function deregister() public //ch_register(msg.sender)
+    {
+        msg.sender.transfer(bank[msg.sender].bal);
+
+        bank[msg.sender].status = false;
+        bank[msg.sender].bal = 0;
+    }
+    
+    function tok_count(address token,address ad) public
+    {
+        bank[ad].token_count = ERC20(token).balanceOf(ad);
+    }
+
+    
+    //Bank Contract Basic functions
+    function deposit(address addr)  public payable
+    {
+        bank[addr].bal += msg.value;
+    }
+   
+    function withdraw(address user_address,uint _amount) public
+    {
+        require(bank[user_address].bal >= _amount);                            // controlled in front end
+        bank[user_address].bal -= _amount;
+        user_address.transfer(_amount);
+    }
+   
+    function transfer(address from, address to, uint _amount) public payable returns(bool)  //ch_register(to)
+    {  
+        // require(bank[from].bal >= _amount);
+       
+        bank[from].bal -= _amount;
+        bank[to].bal += _amount;  
+        return true;
+        
+    }
+    
+    struct user_req_loan
+    {
+       address loan_requestor;
+       address token_address;
+       address bank_address;
+       uint amount_of_token;
+       uint year;
+       uint8 state;  //1=request, 2=approved, 3=rejected
+      
+    }
+  
+   
+    mapping(uint=>user_req_loan) public loan_req_details;
+    
+    uint public loan_req_id;
+    
+    function loan_req(address _token_address,address _bank_address,uint _amount_of_token,uint year)public payable returns(bool)
+    {
+      loan_req_id +=1;
+      loan_req_details[loan_req_id].loan_requestor = msg.sender; 
+      loan_req_details[loan_req_id].token_address = _token_address;
+      loan_req_details[loan_req_id].bank_address = _bank_address;
+      loan_req_details[loan_req_id].amount_of_token = _amount_of_token;
+      loan_req_details[loan_req_id].year = year;
+      loan_req_details[loan_req_id].state = 1;
+      return true;
+    }
+    //                          2       0xd145a91a7c5232b6ada604593cd675acb16d8053 0x6814b126eebeed353a8d9e1bdcac422f6f0a339e 5 1 3
+
+
+    function approve_loan(uint _loan_req_id,address _token_address,address loan_req_address,uint _token_amount,uint year,uint8 _decision) public payable returns(bool)
+    {
+     require(loan_req_details[_loan_req_id].state == 1);
+     require(_decision==2 || _decision==3);
+     loan_req_details[_loan_req_id].state = _decision;
+     if(_decision == 2) // bank approved the loan
+        {
+        ERC20(_token_address).transferFrom(loan_req_address,msg.sender,_token_amount);
+        loan_count += 1;
+        loan[loan_count].loan_id = loan_count;
+        loan[loan_count].lender_address =msg.sender;
+        loan[loan_count].borrower_address =  loan_req_address;
+        loan[loan_count].token_address = _token_address;
+        loan[loan_count].amount = (eth * _token_amount);
+        loan[loan_count].next_settle_time = now + 2 minutes;//35 days;
+        loan[loan_count].months = year*12;
+        loan[loan_count].bal_loan = (eth * _token_amount);
+        uint amount = ((eth * _token_amount) * ((bank[msg.sender].loan_interst) / 100) ) /100;
+        loan[loan_count].current_installment = amount + ((eth * _token_amount)/(year*12));
+        
+        bank[loan_req_address].borrow_amount += (eth *_token_amount);
+        bank[msg.sender].lend_amount += (eth *_token_amount);
+     
+        loan_get_id[loan_req_address][loan_get_count[loan_req_address]] = loan_count;
+        loan_get_count[loan_req_address] += 1;
+        loan_pro_id[msg.sender][loan_pro_count[msg.sender]] = loan_count;
+        loan_pro_count[msg.sender] += 1;
+        //loan_req_details[loan_count].state = 2;
+           
+        }
+        else if(_decision == 3) //bank rejected the loan
+        {
+            ERC20(_token_address).transferFrom(loan_req_address,loan_req_address,_token_amount);
+           
+    }
+           return true;
+     
+    }
+    
+    function loan_due(uint ln_id,uint due_amt) public
+    {
+        // require( due_amt <= bank[msg.sender].bal);                          // controlled in front end
+        
+        transfer(msg.sender, (loan[ln_id].lender_address), due_amt);
+        
+        bank[msg.sender].borrow_amount -= loan[ln_id].amount / loan[ln_id].months;
+        bank[ loan[ln_id].lender_address ].lend_amount -= loan[ln_id].amount / loan[ln_id].months;
+        loan[ln_id].bal_loan -= loan[ln_id].amount / loan[ln_id].months;        // reduse one installment
+        
+        uint amount = ( (loan[ln_id].bal_loan) * ( (bank[ loan[ln_id].lender_address ].loan_interst) / 100) ) /100;
+        loan[ln_id].current_installment = amount + (loan[ln_id].amount / loan[ln_id].months);
+                
+        loan[ln_id].next_settle_time += 1 minutes;//30 days;
+        
+        loan[ln_id].settle_count += 1;
+    }
+        
+    function last_loan_due(uint ln_id,uint due_amt) public
+    {
+        loan_due(ln_id,due_amt);
+        
+        bank[msg.sender].borrow_amount -= loan[ln_id].bal_loan;
+        bank[ loan[ln_id].lender_address ].lend_amount -= loan[ln_id].bal_loan;
+        loan[ln_id].bal_loan = 0;
+        
+        ERC20(loan[ln_id].token_address).transferFrom( loan[ln_id].lender_address , msg.sender, (loan[ln_id].amount/eth));
+        transfer(loan[ln_id].lender_address,msg.sender, (loan[ln_id].amount/eth));
+        
+            
+        tok_count((loan[ln_id].token_address),msg.sender);
+        tok_count((loan[ln_id].token_address),(loan[ln_id].lender_address));
+    }
+    
+    //Fixed_Deposit contract functions
+    
+    function Fixed_Deposit(address bank_addr, uint year) public payable //ch_register(bank_addr)
+    {
+        deposit(bank_addr);
+        
+        fix_dep[fix_dep_count].fixed_dep_id = fix_dep_count;
+        fix_dep[fix_dep_count].bank_address = bank_addr;
+        fix_dep[fix_dep_count].user_address = msg.sender;
+        fix_dep[fix_dep_count].amount = msg.value;
+        fix_dep[fix_dep_count].end_time =now + 2 minutes;//now + (year *1 years);
+        fix_dep[fix_dep_count].year = year;
+        fix_dep[fix_dep_count].status = true;
+        
+        //store my deposit details for my reference
+        my_fix_dep_id[msg.sender][ my_fix_acc_count[msg.sender] ] = fix_dep_count;
+        my_fix_acc_count[msg.sender] += 1;
+        
+        //store my deposit details for owner_bank reference
+        my_clients_dep_id[bank_addr][ my_clients_count[bank_addr] ] = fix_dep_count;
+        my_clients_count[bank_addr] += 1;
+        
+        bank[bank_addr].fixed_amount_bank += msg.value;
+        bank[msg.sender].fixed_amount_user += msg.value;
+        
+        fix_dep_count += 1;
+    }
+    
+    function fix_amt_settlement(uint fix_id,uint value)public
+    {
+        // require(fix_dep[fix_id].status == true);                //controlled in front end
+            
+        require(bank[ fix_dep[fix_id].bank_address ].bal >= value);
+        
+        bank[ fix_dep[fix_id].bank_address ].bal -= value;
+        (fix_dep[fix_id].user_address).transfer( value );
+
+        bank[ fix_dep[fix_id].user_address ].fixed_amount_user -= fix_dep[fix_id].amount;
+        bank[ fix_dep[fix_id].bank_address ].fixed_amount_bank -= fix_dep[fix_id].amount; 
+            
+        fix_dep[fix_id].status = false;
+    }
+}
